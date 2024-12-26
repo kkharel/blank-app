@@ -5,6 +5,26 @@ import plotly.express as px
 import seaborn as sns
 import matplotlib.pyplot as plt
 
+from ucimlrepo import fetch_ucirepo 
+  
+# fetch dataset 
+in_vehicle_coupon_recommendation = fetch_ucirepo(id=603) 
+  
+# # data (as pandas dataframes) 
+# X = in_vehicle_coupon_recommendation.data.features 
+# y = in_vehicle_coupon_recommendation.data.targets 
+  
+# metadata 
+in_vehicle_coupon_recommendation.metadata
+  
+# variable information 
+in_vehicle_coupon_recommendation.variables
+
+# dataframe = pd.concat([X, y])
+# dataframe
+
+
+
 # Title of the Streamlit app
 st.title("Data Exploration & Visualization")
 
@@ -51,6 +71,16 @@ if uploaded_file is not None:
     # except ValueError as e:
     #     st.sidebar.error(f"Error converting column {column_to_set_dtype} to {selected_dtype}: {e}")
 
+    # Check for duplicate values
+    duplicate = df[df.duplicated(keep = "last")]
+    st.write("Duplicate records in the dataset:")
+    duplicate
+
+    # removing duplicate records from the dataset
+    st.write("Dropping duplicate values from the dataset...")
+    df = df.drop_duplicates()
+    st.write("Shape of the dataset after removing duplicates:")
+    st.write(df.shape)
 
     # Missing Values
     # Create a dictionary with column names and missing value count
@@ -106,8 +136,8 @@ if uploaded_file is not None:
     st.write(', '.join([f"{col}: {missing_values_after_handling_dict[col]}" for col in missing_values_after_handling_dict]))
     
     # Display the DataFrame after handling missing values
-    st.write("Uploaded DataFrame after handling missing values:")
-    st.write(df)
+    st.write("Shape of the dataframe after handling missing values:")
+    st.write(df.shape)
 
     # Sidebar for data subsetting
     st.sidebar.header("Data Subsetting")
@@ -153,8 +183,7 @@ if uploaded_file is not None:
 
     # Sidebar for selecting columns and chart types
     st.sidebar.header("Visualization Settings")
-
-    chart_type = st.sidebar.selectbox("Select Chart Type", ["Histogram", "Bar Chart", "Scatter Plot"])
+    chart_type = st.sidebar.selectbox("Select Chart Type", ["Histogram", "Bar Chart"])
 
     # Separate columns by data type
     numerical_columns = subset_df.select_dtypes(include=["float64", "int64"]).columns
@@ -199,66 +228,57 @@ if uploaded_file is not None:
             # Display the plotly figure
             st.plotly_chart(figure)
 
-    # Plot Bar Chart
     elif chart_type == "Bar Chart":
         if categorical_columns.empty:
             st.sidebar.write("No categorical columns available for bar chart.")
         else:
-            column = st.sidebar.selectbox("Select Column for Bar Chart", categorical_columns)
+            column = st.sidebar.selectbox("Select Column for Bar Chart", list(all_columns))
 
             # Let the user pick a column to color the bar chart
             color_column = st.sidebar.selectbox("Select Column for Coloring", [None] + list(all_columns))
 
-            # Group by the selected column and count the occurrences
-            bar_data = subset_df.groupby([column, color_column]).size().reset_index(name='count') if color_column else subset_df[column].value_counts().reset_index()
-            bar_data.columns = [column, color_column, 'count'] if color_column else [column, 'count']
+            # Let the user select whether to display percentages or counts
+            display_mode = st.sidebar.radio("Display Mode", ["Count", "Percentage"])
+
+            if display_mode == "Count":
+                # Group by the selected column and count the occurrences
+                if color_column:
+                    bar_data = subset_df.groupby([column, color_column]).size().reset_index(name='count')
+                    bar_data.columns = [column, color_column, 'count']
+                else:
+                    bar_data = subset_df[column].value_counts().reset_index()
+                    bar_data.columns = [column, 'count']
+                y_value = 'count'
+                y_title = 'Count'
+            else:
+                total_counts = subset_df[column].value_counts()
+                percentages = (total_counts / total_counts.sum()) * 100
+                percent_df = percentages.reset_index().rename(columns={'index': column, column: 'Percentage'})
+                if color_column:
+                    color_total_counts = subset_df.groupby([column, color_column]).size().reset_index(name='count')
+                    color_total_counts['Percentage'] = (color_total_counts['count'] / color_total_counts.groupby(column)['count'].transform('sum')) * 100
+                    bar_data = color_total_counts
+                else:
+                    bar_data = percent_df
+                y_value = 'Percentage'
+                y_title = 'Percentage (%)'
 
             # Plot bar chart using plotly
             figure = px.bar(
                 bar_data,
                 x=column,
-                y='count',
+                y=y_value,
                 color=color_column if color_column else None,
-                title=f'{column} Count',
-                labels={column: column, 'count': 'Count'}
+                title=f'{column} {y_title}',
+                labels={column: column, y_value: y_title}
             )
 
+            # Make sure all x-axis categories are displayed
+            figure.update_layout(xaxis=dict(type='category'))
+            
             # Display the plotly figure
             st.plotly_chart(figure)
 
-    # Plot Scatter Plot
-    elif chart_type == "Scatter Plot":
-        if numerical_columns.empty:
-            st.sidebar.write("No numerical columns available for scatter plot.")
-        else:
-            x_column = st.sidebar.selectbox("Select X-Axis Column for Scatter Plot", numerical_columns)
-            y_column = st.sidebar.selectbox("Select Y-Axis Column for Scatter Plot", numerical_columns)
-
-            # Let the user pick a column to color the scatter plot
-            color_column = st.sidebar.selectbox("Select Column for Coloring", [None] + list(categorical_columns))
-
-            # Plot scatter plot using plotly
-            if color_column:
-                figure = px.scatter(
-                    subset_df,
-                    x=x_column,
-                    y=y_column,
-                    color=color_column,
-                    title=f'{x_column} vs {y_column}',
-                    labels={x_column: x_column, y_column: y_column}
-                )
-            else:
-                # Plot without color if no color column is selected
-                figure = px.scatter(
-                    subset_df,
-                    x=x_column,
-                    y=y_column,
-                    title=f'{x_column} vs {y_column}',
-                    labels={x_column: x_column, y_column: y_column}
-                )
-
-            # Display the plotly figure
-            st.plotly_chart(figure)
 
 
     # Sidebar for selecting the column and conditions for coupon acceptance analysis
